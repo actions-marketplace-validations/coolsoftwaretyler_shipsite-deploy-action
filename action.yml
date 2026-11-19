@@ -1,0 +1,75 @@
+name: Deploy to shipsite.sh
+description: Deploy a folder of static files to shipsite.sh and get its URL. Create a site, update one, or publish a preview per pull request.
+author: shipsite.sh
+branding:
+  icon: upload-cloud
+  color: blue
+
+inputs:
+  folder:
+    description: The folder to deploy, for example ./dist. It should have an index.html at its top level.
+    required: true
+  api-key:
+    description: Your shipsite.sh API key. Store it as a repository secret. A deploy-scoped key is the right choice for CI.
+    required: true
+  site:
+    description: The ID of an existing site to update (site_...). Leave empty to create a new site on every run.
+    required: false
+  name:
+    description: Serve the site at https://<name>.shipsite.sh. Lowercase letters, numbers and hyphens.
+    required: false
+  ttl:
+    description: "How long the site lives: seconds, or a duration such as 30m, 12h or 7d. Default 24h. Not allowed together with pin."
+    required: false
+  pin:
+    description: Set to true to keep the site until it is deleted (no expiry).
+    required: false
+    default: "false"
+  password:
+    description: Require this password to view the site (6 to 128 characters). Store it as a secret.
+    required: false
+  keep:
+    description: "With site: set to true to leave files on the site that are no longer in the folder. By default they are removed."
+    required: false
+    default: "false"
+  cli-version:
+    description: The version of the shipsite npm package to run.
+    required: false
+    default: latest
+  api-url:
+    description: The API base URL. Only needed for testing.
+    required: false
+
+outputs:
+  url:
+    description: The URL of the deployed site.
+    value: ${{ steps.deploy.outputs.url }}
+  site-id:
+    description: The ID of the site (site_...). Pass it as "site" to update the same site later.
+    value: ${{ steps.deploy.outputs.site-id }}
+  permanent-url:
+    description: The URL by site ID, which keeps working if the site is renamed.
+    value: ${{ steps.deploy.outputs.permanent-url }}
+  expires-at:
+    description: When the site expires (ISO 8601), or empty for a pinned site.
+    value: ${{ steps.deploy.outputs.expires-at }}
+
+runs:
+  using: composite
+  steps:
+    - id: deploy
+      shell: bash
+      # Inputs reach the script as environment variables, never as text
+      # pasted into the command, so a value cannot run as shell code.
+      env:
+        SHIPSITE_API_KEY: ${{ inputs.api-key }}
+        INPUT_FOLDER: ${{ inputs.folder }}
+        INPUT_SITE: ${{ inputs.site }}
+        INPUT_NAME: ${{ inputs.name }}
+        INPUT_TTL: ${{ inputs.ttl }}
+        INPUT_PIN: ${{ inputs.pin }}
+        INPUT_PASSWORD: ${{ inputs.password }}
+        INPUT_KEEP: ${{ inputs.keep }}
+        INPUT_CLI_VERSION: ${{ inputs.cli-version }}
+        INPUT_API_URL: ${{ inputs.api-url }}
+      run: bash "$GITHUB_ACTION_PATH/deploy.sh"

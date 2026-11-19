@@ -1,0 +1,110 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Also deploy a real site (needs the SHIPSITE_API_KEY secret, costs one site-day)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs the action against a stand-in API, so it needs no account.
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stand-in API
+        run: |
+          node test/fake-api.mjs &
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://127.0.0.1:8787/ && exit 0
+            sleep 0.2
+          done
+          echo "::error::The stand-in API did not start."
+          exit 1
+
+      - name: Create a site
+        id: create
+        uses: ./
+        with:
+          folder: test/site
+          api-key: sk_live_fake
+          name: my-docs
+          ttl: 7d
+          password: open-sesame
+          api-url: http://127.0.0.1:8787
+
+      - name: Update and pin it
+        id: update
+        uses: ./
+        with:
+          folder: test/site
+          api-key: sk_live_fake
+          site: ${{ steps.create.outputs.site-id }}
+          pin: true
+          api-url: http://127.0.0.1:8787
+
+      - name: Fail on a wrong key
+        id: wrong-key
+        continue-on-error: true
+        uses: ./
+        with:
+          folder: test/site
+          api-key: sk_live_wrong
+          api-url: http://127.0.0.1:8787
+
+      - name: Fail on a missing folder
+        id: no-folder
+        continue-on-error: true
+        uses: ./
+        with:
+          folder: does-not-exist
+          api-key: sk_live_fake
+          api-url: http://127.0.0.1:8787
+
+      - name: Check the results
+        env:
+          CREATE_URL: ${{ steps.create.outputs.url }}
+          CREATE_ID: ${{ steps.create.outputs.site-id }}
+          CREATE_PERMANENT: ${{ steps.create.outputs.permanent-url }}
+          CREATE_EXPIRES: ${{ steps.create.outputs.expires-at }}
+          UPDATE_URL: ${{ steps.update.outputs.url }}
+          UPDATE_EXPIRES: ${{ steps.update.outputs.expires-at }}
+          WRONG_KEY: ${{ steps.wrong-key.outcome }}
+          NO_FOLDER: ${{ steps.no-folder.outcome }}
+        run: node test/check.mjs
+
+  # A real deploy, run by hand: Actions → Test → Run workflow → live.
+  live:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        id: deploy
+        uses: ./
+        with:
+          folder: test/site
+          api-key: ${{ secrets.SHIPSITE_API_KEY }}
+          ttl: 5m
+
+      - name: Fetch the site
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: curl --fail --silent --show-error "$URL" | grep "Deployed by the shipsite deploy action"
+
+      - name: Delete the site
+        if: ${{ always() && steps.deploy.outputs.site-id != '' }}
+        env:
+          SHIPSITE_API_KEY: ${{ secrets.SHIPSITE_API_KEY }}
+          SITE_ID: ${{ steps.deploy.outputs.site-id }}
+        run: npx --yes shipsite@latest delete "$SITE_ID"
