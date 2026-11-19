@@ -1,5 +1,5 @@
 name: Deploy to shipsite.sh
-description: Deploy a folder of static files to shipsite.sh and get its URL. Create a site, update one, or publish a preview per pull request.
+description: Create a site, update one, or publish a preview per pull request.
 author: shipsite.sh
 branding:
   icon: upload-cloud
